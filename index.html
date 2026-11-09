@@ -153,7 +153,7 @@ function detect(buf, sr) {
   let s = 0;
   for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
   const rms = Math.sqrt(s / buf.length);
-  if (rms < 0.006) return { hz: null, rms };
+  if (rms < 0.0006) return { hz: null, rms };   // 約 -64dB。これより下は無音とみなす
   const minTau = Math.floor(sr / 1100);
   const maxTau = Math.min(Math.floor(sr / 65), buf.length >> 1);
   const W = buf.length - maxTau;
@@ -537,6 +537,7 @@ cv.addEventListener('pointercancel', endPtr);
 document.addEventListener('gesturestart', e => e.preventDefault());
 
 requestAnimationFrame(frame);
+window.__pitchTrack = () => track;   // 動作確認用
 })();
 </script>
 </body>

@@ -91,6 +91,58 @@ button.on{background:var(--accent-soft); border-color:var(--accent); color:var(-
 #recBtn.recording i{width:28px; height:28px; border-radius:6px}
 #playBtn{min-width:64px}
 .err{color:var(--rec)}
+
+/* 線を出す音量 */
+.gate{
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom:10px; display:flex; align-items:center; gap:10px; font-size:.75rem; color:var(--muted);
+}
+.gate label{white-space:nowrap}
+.gate output{font-family:var(--font-num); font-variant-numeric:tabular-nums; min-width:4.5ch; text-align:right; color:var(--fg)}
+.gate-track{position:relative; flex:1; height:28px; display:flex; align-items:center}
+.gate-track::before{content:""; position:absolute; left:0; right:0; height:8px; border-radius:4px; background:var(--grid)}
+.gate-track .lvl{position:absolute; left:0; height:8px; border-radius:4px; background:var(--good); width:0; opacity:.75}
+.gate-track .lvl.under{background:var(--muted)}
+.gate input{position:relative; width:100%; margin:0; background:transparent; -webkit-appearance:none; appearance:none; height:28px}
+.gate input::-webkit-slider-runnable-track{height:28px; background:transparent}
+.gate input::-moz-range-track{height:28px; background:transparent}
+.gate input::-webkit-slider-thumb{-webkit-appearance:none; width:6px; height:26px; margin-top:1px; border-radius:3px; background:var(--fg)}
+.gate input::-moz-range-thumb{width:6px; height:26px; border:0; border-radius:3px; background:var(--fg)}
+
+/* ロールの上に重ねる小物 */
+.take{position:absolute; left:50%; transform:translateX(-50%); top:8px; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:.8rem; font-weight:600; padding:4px 10px; border-radius:12px; background:var(--bg); color:var(--fg); pointer-events:none}
+#autoYBtn{position:absolute; top:6px; right:max(8px, env(safe-area-inset-right, 0px)); min-height:32px; padding:4px 10px; font-size:.75rem}
+
+/* 録音一覧 */
+.sheet{position:fixed; inset:0; z-index:20; background:var(--bg); display:flex; flex-direction:column}
+.sheet-head{
+  padding-top:max(12px, env(safe-area-inset-top, 0px));
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom:12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--grid)
+}
+.sheet-head h2{margin:0; font-size:1.1rem}
+#libList{list-style:none; margin:0; padding:0; overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch;
+  padding-bottom:env(safe-area-inset-bottom, 0px)}
+#libList li{
+  border-bottom:1px solid var(--grid);
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-block:12px; display:flex; flex-direction:column; gap:10px
+}
+#libList li.current{background:var(--accent-soft)}
+.item-main{display:flex; flex-direction:column; gap:3px; cursor:pointer; min-width:0}
+.item-name{font-size:1rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.item-sub{font-size:.78rem; color:var(--muted); font-family:var(--font-num); font-variant-numeric:tabular-nums}
+.item-acts{display:flex; gap:8px; flex-wrap:wrap}
+.item-acts button{min-height:36px; padding:6px 12px}
+.item-acts button.danger{color:var(--rec)}
+.item-acts button.danger.armed{background:var(--rec); border-color:var(--rec); color:#fff}
+.rename{display:flex; gap:8px}
+.rename input{flex:1; min-width:0; font:inherit; font-size:16px; padding:8px 10px; border-radius:8px; border:1px solid var(--accent); background:var(--roll); color:var(--fg)}
+.empty{padding:32px 16px; text-align:center; color:var(--muted); line-height:1.7}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
 </head>
@@ -103,21 +155,35 @@ button.on{background:var(--accent-soft); border-color:var(--accent); color:var(-
   </div>
 </header>
 
+<div class="gate">
+  <label for="gateIn">線を出す音量</label>
+  <div class="gate-track"><div class="lvl" id="lvlEl"></div><input type="range" id="gateIn" min="-80" max="-20" step="1" value="-64"></div>
+  <output id="gateOut" for="gateIn">-64dB</output>
+</div>
+
 <div id="wrap">
   <canvas id="cv"></canvas>
+  <div class="take" id="takeEl" hidden></div>
+  <button id="autoYBtn" class="on">縦を自動</button>
   <div class="hint" id="hint">下の赤いボタンで録音を始めます。<br>歌った音程がここに線で流れます。<br>録音後は、なぞって移動・2本指で拡大・タップで再生位置。</div>
 </div>
 
 <footer>
   <div class="side">
+    <button id="libBtn">一覧</button>
     <button id="fitBtn" disabled>全体</button>
-    <button id="autoYBtn" class="on">縦を自動</button>
   </div>
   <button id="recBtn" aria-label="録音"><i></i></button>
   <div class="side right">
     <button id="playBtn" disabled>再生</button>
   </div>
 </footer>
+
+<section class="sheet" id="lib" hidden aria-label="録音一覧">
+  <div class="sheet-head"><h2>録音一覧</h2><button id="libClose">閉じる</button></div>
+  <ul id="libList"></ul>
+  <p class="empty" id="libEmpty" hidden>まだ録音がありません。<br>録音を止めると、ここに自動で保存されます。</p>
+</section>
 
 <script>
 (() => {
@@ -126,6 +192,7 @@ const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const JP   = ['ド','ド#','レ','レ#','ミ','ファ','ファ#','ソ','ソ#','ラ','ラ#','シ'];
 const BLACK = new Set([1,3,6,8,10]);
 const hzToMidi = hz => 69 + 12 * Math.log2(hz / 440);
+const midiToHz = m => 440 * Math.pow(2, (m - 69) / 12);
 const pc = n => ((n % 12) + 12) % 12;
 const noteName = n => NOTE[pc(n)] + (Math.floor(n / 12) - 1);
 
@@ -133,11 +200,18 @@ const $ = id => document.getElementById(id);
 const cv = $('cv'), g = cv.getContext('2d');
 const noteEl = $('noteEl'), centsEl = $('centsEl'), hzEl = $('hzEl'), statusEl = $('statusEl'), markEl = $('markEl');
 const recBtn = $('recBtn'), playBtn = $('playBtn'), fitBtn = $('fitBtn'), autoYBtn = $('autoYBtn'), hint = $('hint');
+const gateIn = $('gateIn'), gateOut = $('gateOut'), lvlEl = $('lvlEl'), takeEl = $('takeEl');
+const libBtn = $('libBtn'), lib = $('lib'), libClose = $('libClose'), libList = $('libList'), libEmpty = $('libEmpty');
 const audio = new Audio(); audio.preload = 'auto'; audio.playsInline = true;
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('pt.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('pt.' + k, JSON.stringify(v)); } catch (e) {} }
+};
 
 // ---- 状態 ----
 let mode = 'idle';                 // idle | rec | play
-let track = [];                    // {t, m(半音・小数), hz, rms}
+let track = [];                    // {t, m(半音・小数 / null), rms}
 let duration = 0;
 let pxPerSec = 160, pxPerSemi = 22;
 let viewEnd = 4;                   // 右端の時刻（秒）
@@ -145,15 +219,40 @@ let centerMidi = 60;               // 画面中央の音（C4）
 let autoY = true;
 let cursorT = null;                // 再生位置（停止中のタップでも置ける）
 let stream = null, actx = null, analyser = null, buf = null, recorder = null, chunks = [], t0 = 0, wakeLock = null;
-let audioUrl = null, sampleTimer = 0;
+let audioUrl = null, sampleTimer = 0, lastLevelAt = 0;
+let currentId = null;              // 表示中の録音
+let segs = [], segsDirty = true, segsAt = 0;
+
+// ---- 線を出す音量 ----
+const GATE_MIN = -80, GATE_MAX = -20;
+let gateDb = store.get('gateDb', -64);
+let gateRms = Math.pow(10, gateDb / 20);
+function setGate(db) {
+  gateDb = Math.max(GATE_MIN, Math.min(GATE_MAX, Math.round(db)));
+  gateRms = Math.pow(10, gateDb / 20);
+  gateIn.value = gateDb; gateOut.textContent = gateDb + 'dB';
+  segsDirty = true;
+}
+setGate(gateDb);
+gateIn.addEventListener('input', () => setGate(+gateIn.value));
+gateIn.addEventListener('change', () => store.set('gateDb', gateDb));
+const ok = p => p.m != null && p.rms >= gateRms;
+function showLevel(rms) {
+  if (rms == null) { lvlEl.style.width = '0'; return; }
+  const db = rms > 0 ? 20 * Math.log10(rms) : -120;
+  const f = Math.max(0, Math.min(1, (db - GATE_MIN) / (GATE_MAX - GATE_MIN)));
+  lvlEl.style.width = (f * 100) + '%';
+  lvlEl.classList.toggle('under', rms < gateRms);
+}
 
 // ---- 音程検出（YIN） ----
+// 音量の線引きは表示の時に行う。ここでは -80dB より上ならすべて解析しておく（後から音量を変えても線が出せる）
 let dBuf = null;
 function detect(buf, sr) {
   let s = 0;
   for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
   const rms = Math.sqrt(s / buf.length);
-  if (rms < 0.0006) return { hz: null, rms };   // 約 -64dB。これより下は無音とみなす
+  if (rms < 0.0001) return { hz: null, rms };
   const minTau = Math.floor(sr / 1100);
   const maxTau = Math.min(Math.floor(sr / 65), buf.length >> 1);
   const W = buf.length - maxTau;
@@ -183,6 +282,117 @@ function detect(buf, sr) {
     if (den !== 0) shift = 0.5 * (a - c) / den;
   }
   return { hz: sr / (tau + shift), rms };
+}
+
+// ---- 音符ブロック（同じ音に留まった区間） ----
+function buildSegs() {
+  const out = [];
+  let cur = null, cand = null;
+  const push = () => { if (cur && cur.end - cur.start >= 0.08) out.push(cur); };
+  for (const p of track) {
+    if (!ok(p)) { if (cur && p.t - cur.end > 0.08) { push(); cur = null; cand = null; } continue; }
+    if (cur && p.t - cur.end > 0.08) { push(); cur = null; cand = null; }
+    if (!cur) { cur = { n: Math.round(p.m), start: p.t, end: p.t, sum: p.m, cnt: 1 }; continue; }
+    if (Math.abs(p.m - cur.n) < 0.7) { cur.end = p.t; cur.sum += p.m; cur.cnt++; cand = null; continue; }
+    const n = Math.round(p.m);
+    if (!cand || cand.n !== n) cand = { n, start: p.t };
+    if (p.t - cand.start >= 0.06) {
+      push();
+      cur = { n, start: cand.start, end: p.t, sum: p.m, cnt: 1 };
+      cand = null;
+    }
+  }
+  push();
+  return out;
+}
+
+// ---- 保存（IndexedDB） ----
+const DB = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('pitch-trace', 1);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        db.createObjectStore('meta', { keyPath: 'id' });
+        db.createObjectStore('data', { keyPath: 'id' });
+      };
+      r.onsuccess = () => { this.db = r.result; res(this.db); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(stores, modeRW, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(stores, modeRW);
+      let out;
+      Promise.resolve(fn(tx)).then(v => { out = v; });
+      tx.oncomplete = () => res(out);
+      tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error);
+    });
+  },
+  req(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async list() {
+    const db = await this.open();
+    const all = await this.req(db.transaction('meta').objectStore('meta').getAll());
+    return all.sort((a, b) => b.createdAt - a.createdAt);
+  },
+  async getMeta(id) { const db = await this.open(); return this.req(db.transaction('meta').objectStore('meta').get(id)); },
+  async getData(id) { const db = await this.open(); return this.req(db.transaction('data').objectStore('data').get(id)); },
+  save(meta, data) { return this.run(['meta', 'data'], 'readwrite', tx => { tx.objectStore('meta').put(meta); tx.objectStore('data').put(data); }); },
+  putMeta(meta) { return this.run(['meta'], 'readwrite', tx => { tx.objectStore('meta').put(meta); }); },
+  del(id) { return this.run(['meta', 'data'], 'readwrite', tx => { tx.objectStore('meta').delete(id); tx.objectStore('data').delete(id); }); }
+};
+
+function packTrack(tr) {
+  const n = tr.length, t = new Float32Array(n), m = new Float32Array(n), r = new Float32Array(n);
+  for (let i = 0; i < n; i++) { t[i] = tr[i].t; m[i] = tr[i].m == null ? NaN : tr[i].m; r[i] = tr[i].rms; }
+  return { t, m, r };
+}
+function unpackTrack(d) {
+  const out = new Array(d.t.length);
+  for (let i = 0; i < d.t.length; i++) out[i] = { t: d.t[i], m: Number.isNaN(d.m[i]) ? null : d.m[i], rms: d.r[i] };
+  return out;
+}
+const pad = n => String(n).padStart(2, '0');
+const fmtDate = ms => { const d = new Date(ms); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const fmtDur = s => Math.floor(s / 60) + ':' + pad(Math.floor(s % 60));
+const extOf = mime => /webm/.test(mime) ? '.webm' : /ogg/.test(mime) ? '.ogg' : '.m4a';
+
+async function saveTake(blob, tr, dur) {
+  const id = Date.now();
+  const meta = { id, name: '録音 ' + fmtDate(id), createdAt: id, duration: dur };
+  const audioBuf = await blob.arrayBuffer();     // Safari の古い版は Blob をそのまま保存できないので中身で持つ
+  const data = Object.assign({ id, audio: audioBuf, mime: blob.type }, packTrack(tr));
+  await DB.save(meta, data);
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  return meta;
+}
+
+function setAudio(blob) {
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = URL.createObjectURL(blob);
+  audio.src = audioUrl;
+  audio.load();
+}
+function setTakeName(name) { takeEl.textContent = name || ''; takeEl.hidden = !name; }
+
+async function loadTake(id) {
+  if (mode === 'rec') return;
+  audio.pause();
+  const [meta, data] = await Promise.all([DB.getMeta(id), DB.getData(id)]);
+  if (!meta || !data) { setStatus('録音を読めませんでした', true); return; }
+  track = unpackTrack(data);
+  duration = meta.duration;
+  segsDirty = true;
+  setAudio(new Blob([data.audio], { type: data.mime }));
+  currentId = id; setTakeName(meta.name); store.set('lastId', id);
+  cursorT = 0; mode = 'idle'; playBtn.textContent = '再生';
+  playBtn.disabled = false; fitBtn.disabled = !track.length; hint.hidden = true;
+  setStatus(fmtDur(duration));
+  fitAll();
 }
 
 // ---- 録音 ----
@@ -227,22 +437,26 @@ async function startRec() {
   if (recorder) {
     const rec = recorder, recStream = stream;
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    rec.onstop = () => {
+    rec.onstop = async () => {
       // マイクは録音データを書き終えてから止める（先に止めると中身が空になる）
       recStream.getTracks().forEach(t => t.stop());
       const type = rec.mimeType || mime || 'audio/mp4';
       const blob = new Blob(chunks, { type });
       if (!blob.size) { setStatus('録音データが空でした', true); return; }
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-      audioUrl = URL.createObjectURL(blob);
-      audio.src = audioUrl;
-      audio.load();
+      setAudio(blob);
       playBtn.disabled = false;
-      setStatus('録音済み ' + duration.toFixed(1) + '秒');
+      try {
+        const meta = await saveTake(blob, rec._track, rec._dur);
+        currentId = meta.id; setTakeName(meta.name); store.set('lastId', meta.id);
+        setStatus('保存しました ' + fmtDur(meta.duration));
+      } catch (e) {
+        setStatus('保存できませんでした（' + (e && e.name) + '）', true);
+      }
     };
   }
 
-  track = []; duration = 0; cursorT = null; lastLevelAt = 0;
+  track = []; duration = 0; cursorT = null; lastLevelAt = 0; segs = []; segsDirty = true;
+  currentId = null; setTakeName('録音中');
   playBtn.disabled = true; fitBtn.disabled = true;
   mode = 'rec';
   if (recorder) recorder.start(1000);
@@ -257,19 +471,21 @@ async function startRec() {
 function stopRec() {
   clearInterval(sampleTimer);
   mode = 'idle';
-  if (recorder && recorder.state !== 'inactive') recorder.stop();
-  else if (stream) stream.getTracks().forEach(t => t.stop());
+  duration = track.length ? track[track.length - 1].t : 0;
+  if (recorder && recorder.state !== 'inactive') {
+    recorder._track = track; recorder._dur = duration;
+    recorder.stop();
+  } else if (stream) stream.getTracks().forEach(t => t.stop());
   if (actx) actx.close().catch(() => {});
   stream = null; actx = null; analyser = null;
   recBtn.classList.remove('recording'); recBtn.setAttribute('aria-label', '録音');
-  duration = track.length ? track[track.length - 1].t : 0;
   fitBtn.disabled = !track.length;
-  cursorT = 0;
+  cursorT = 0; segsDirty = true;
+  showLevel(null);
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   setStatus('保存中…');
 }
 
-let lastLevelAt = 0;
 function sample() {
   if (mode !== 'rec' || !analyser) return;
   analyser.getFloatTimeDomainData(buf);
@@ -277,8 +493,8 @@ function sample() {
   const t = (performance.now() - t0) / 1000 - (buf.length / sr) / 2;
   if (t < 0) return;
   const r = detect(buf, sr);
-  const m = r.hz ? hzToMidi(r.hz) : null;
-  track.push({ t, m, hz: r.hz, rms: r.rms });
+  track.push({ t, m: r.hz ? hzToMidi(r.hz) : null, rms: r.rms });
+  segsDirty = true;
   if (t - lastLevelAt > 0.25) {
     lastLevelAt = t;
     const db = r.rms > 0 ? Math.round(20 * Math.log10(r.rms)) : -99;
@@ -302,9 +518,100 @@ audio.addEventListener('pause', () => {
 });
 audio.addEventListener('ended', () => { mode = 'idle'; playBtn.textContent = '再生'; cursorT = 0; });
 audio.addEventListener('error', () => {
+  if (!audio.getAttribute('src')) return;
   const c = audio.error ? audio.error.code : '?';
   setStatus('音声を読めません（コード' + c + '）', true);
 });
+
+// ---- 録音一覧 ----
+async function renderLib() {
+  let items = [];
+  try { items = await DB.list(); } catch (e) { setStatus('一覧を読めませんでした', true); }
+  libList.textContent = '';
+  libEmpty.hidden = items.length > 0;
+  for (const it of items) libList.appendChild(libItem(it));
+}
+
+function libItem(it) {
+  const li = document.createElement('li');
+  if (it.id === currentId) li.className = 'current';
+
+  const main = document.createElement('div'); main.className = 'item-main';
+  const name = document.createElement('div'); name.className = 'item-name'; name.textContent = it.name;
+  const sub = document.createElement('div'); sub.className = 'item-sub'; sub.textContent = fmtDate(it.createdAt) + '　' + fmtDur(it.duration);
+  main.append(name, sub);
+  main.addEventListener('click', async () => { closeLib(); await loadTake(it.id); });
+
+  const acts = document.createElement('div'); acts.className = 'item-acts';
+  const bOpen = btn('開く', async () => { closeLib(); await loadTake(it.id); });
+  const bName = btn('名前', () => startRename(li, it));
+  const bShare = btn('共有', () => shareTake(it));
+  const bDel = btn('削除', async () => {
+    if (!bDel.classList.contains('armed')) {
+      bDel.classList.add('armed'); bDel.textContent = 'もう一度押すと削除';
+      setTimeout(() => { bDel.classList.remove('armed'); bDel.textContent = '削除'; }, 3000);
+      return;
+    }
+    await DB.del(it.id);
+    if (it.id === currentId) clearView();
+    li.remove();
+    libEmpty.hidden = libList.children.length > 0;
+  });
+  bDel.classList.add('danger');
+  acts.append(bOpen, bName, bShare, bDel);
+  li.append(main, acts);
+  return li;
+}
+function btn(label, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', fn); return b; }
+
+function startRename(li, it) {
+  const main = li.querySelector('.item-main');
+  const box = document.createElement('form'); box.className = 'rename';
+  const inp = document.createElement('input'); inp.type = 'text'; inp.value = it.name; inp.id = 'rename-' + it.id; inp.setAttribute('aria-label', '録音の名前');
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = '保存';
+  box.append(inp, save);
+  main.hidden = true; li.insertBefore(box, main);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = async () => {
+    if (done) return; done = true;
+    const v = inp.value.trim();
+    if (v && v !== it.name) {
+      it.name = v; await DB.putMeta(it);
+      li.querySelector('.item-name').textContent = v;
+      if (it.id === currentId) setTakeName(v);
+    }
+    box.remove(); main.hidden = false;
+  };
+  box.addEventListener('submit', e => { e.preventDefault(); finish(); });
+  inp.addEventListener('blur', () => setTimeout(finish, 150));
+}
+
+async function shareTake(it) {
+  const data = await DB.getData(it.id);
+  if (!data) return;
+  const safe = it.name.replace(/[\\/:*?"<>|]/g, '_');
+  const file = new File([data.audio], safe + extOf(data.mime), { type: data.mime });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: it.name });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function openLib() { if (mode === 'rec') return; audio.pause(); lib.hidden = false; renderLib(); }
+function closeLib() { lib.hidden = true; }
+function clearView() {
+  audio.pause(); audio.removeAttribute('src'); audio.load();
+  track = []; duration = 0; cursorT = null; currentId = null; segs = []; segsDirty = true;
+  setTakeName(''); playBtn.disabled = true; fitBtn.disabled = true; hint.hidden = false;
+  setStatus('待機中'); store.set('lastId', null);
+}
 
 // ---- 表示 ----
 function setStatus(s, isErr) { statusEl.textContent = s; statusEl.className = 'status' + (isErr ? ' err' : ''); }
@@ -319,7 +626,7 @@ function pointAt(t) {
 }
 
 function showReadout(p) {
-  if (!p || p.m == null) {
+  if (!p || !ok(p)) {
     noteEl.textContent = '--'; centsEl.textContent = '±0¢'; hzEl.textContent = '— Hz';
     markEl.classList.remove('on'); centsEl.style.color = ''; return;
   }
@@ -327,28 +634,25 @@ function showReadout(p) {
   noteEl.textContent = noteName(n);
   centsEl.textContent = (c > 0 ? '+' : c < 0 ? '−' : '±') + Math.abs(c) + '¢ ' + JP[pc(n)];
   centsEl.style.color = Math.abs(c) <= 10 ? 'var(--good)' : Math.abs(c) <= 25 ? '' : 'var(--warn)';
-  hzEl.textContent = p.hz.toFixed(1) + ' Hz';
+  hzEl.textContent = midiToHz(p.m).toFixed(1) + ' Hz';
   markEl.style.left = (50 + c) + '%';
   markEl.classList.add('on');
 }
 
+function median(vals) { if (!vals.length) return null; vals.sort((a, b) => a - b); return vals[vals.length >> 1]; }
 function recentMedian(tEnd, span) {
   const vals = [];
   for (let i = track.length - 1; i >= 0; i--) {
     const p = track[i];
     if (p.t < tEnd - span) break;
-    if (p.m != null) vals.push(p.m);
+    if (ok(p)) vals.push(p.m);
   }
-  if (!vals.length) return null;
-  vals.sort((a, b) => a - b);
-  return vals[vals.length >> 1];
+  return median(vals);
 }
 function medianAround(t, span) {
   const vals = [];
-  for (const p of track) { if (p.t >= t - span && p.t <= t + span && p.m != null) vals.push(p.m); }
-  if (!vals.length) return null;
-  vals.sort((a, b) => a - b);
-  return vals[vals.length >> 1];
+  for (const p of track) { if (p.t >= t - span && p.t <= t + span && ok(p)) vals.push(p.m); }
+  return median(vals);
 }
 
 let css = {};
@@ -370,11 +674,19 @@ function resize() {
   return { w, h };
 }
 
+function roundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  g.beginPath();
+  g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+
 function draw() {
   const { w, h } = resize();
   const tL = viewEnd - w / pxPerSec;
   const X = t => (t - tL) * pxPerSec;
   const Y = m => h / 2 - (m - centerMidi) * pxPerSemi;
+  const font = getComputedStyle(document.body).fontFamily;
   g.fillStyle = css.roll; g.fillRect(0, 0, w, h);
 
   // 鍵盤の段
@@ -390,13 +702,31 @@ function draw() {
     g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
   }
   // 時間の目盛り
-  const step = pxPerSec >= 120 ? 1 : pxPerSec >= 50 ? 2 : 5;
-  g.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  const step = pxPerSec >= 120 ? 1 : pxPerSec >= 50 ? 2 : pxPerSec >= 20 ? 5 : 10;
+  g.font = '11px ' + font;
   g.textBaseline = 'bottom'; g.textAlign = 'left';
   for (let s = Math.max(0, Math.ceil(tL / step) * step); s <= viewEnd; s += step) {
     const x = Math.round(X(s)) + 0.5;
     g.strokeStyle = css.grid; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
     g.fillStyle = css.muted; g.fillText(s + 's', x + 3, h - 4);
+  }
+
+  // 音符ブロック
+  const nowMs = performance.now();
+  if (segsDirty && (mode !== 'rec' || nowMs - segsAt > 100)) { segs = buildSegs(); segsDirty = false; segsAt = nowMs; }
+  const bh = Math.max(4, pxPerSemi * 0.82);
+  g.font = '600 10px ' + font; g.textBaseline = 'middle';
+  for (const sg of segs) {
+    if (sg.end < tL || sg.start > viewEnd) continue;
+    const x = X(sg.start), bw = Math.max(2, (sg.end - sg.start) * pxPerSec), y = Y(sg.n) - bh / 2;
+    roundRect(x, y, bw, bh, 3);
+    g.fillStyle = css['accent-soft']; g.fill();
+    g.globalAlpha = 0.45; g.strokeStyle = css.accent; g.lineWidth = 1; g.stroke(); g.globalAlpha = 1;
+    if (bw > 46 && bh >= 12) {
+      const c = Math.round((sg.sum / sg.cnt - sg.n) * 100);
+      g.fillStyle = css.accent;
+      g.fillText(noteName(sg.n) + ' ' + (c > 0 ? '+' : c < 0 ? '−' : '±') + Math.abs(c), x + 4, y + bh / 2);
+    }
   }
 
   // 音程の線
@@ -407,7 +737,7 @@ function draw() {
     const p = track[i];
     if (p.t < tL - 0.2) continue;
     if (p.t > viewEnd + 0.2) break;
-    if (p.m == null) { prev = null; continue; }
+    if (!ok(p)) { prev = null; continue; }
     const x = X(p.t), y = Y(p.m);
     if (prev && p.t - prev.t < 0.08 && Math.abs(p.m - prev.m) < 2.5) g.lineTo(x, y);
     else { g.moveTo(x, y); }
@@ -419,19 +749,19 @@ function draw() {
   let cur = null;
   if (mode === 'rec') {
     const last = track[track.length - 1];
-    if (last && last.m != null) {
+    if (last && ok(last)) {
       g.fillStyle = css.rec; g.beginPath(); g.arc(X(last.t), Y(last.m), 5, 0, Math.PI * 2); g.fill();
     }
   } else if (cursorT != null && track.length) {
     const x = Math.round(X(cursorT)) + 0.5;
     g.strokeStyle = css.fg; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
     cur = pointAt(cursorT);
-    if (cur && cur.m != null) { g.fillStyle = css.fg; g.beginPath(); g.arc(x, Y(cur.m), 4.5, 0, Math.PI * 2); g.fill(); }
+    if (cur && ok(cur)) { g.fillStyle = css.fg; g.beginPath(); g.arc(x, Y(cur.m), 4.5, 0, Math.PI * 2); g.fill(); }
   }
 
   // 音名ラベル（左端）
   g.textBaseline = 'middle'; g.textAlign = 'left';
-  g.font = '600 11px ' + getComputedStyle(document.body).fontFamily;
+  g.font = '600 11px ' + font;
   for (let n = Math.floor(mBot); n <= Math.ceil(mTop); n++) {
     const isC = pc(n) === 0;
     if (BLACK.has(pc(n))) continue;
@@ -445,33 +775,31 @@ function draw() {
 }
 
 function frame() {
-  const { w } = { w: cv.clientWidth };
+  const w = cv.clientWidth;
   if (mode === 'rec') {
     const now = (performance.now() - t0) / 1000;
     viewEnd = Math.max(w / pxPerSec, now + 0.4);
     if (autoY) { const m = recentMedian(now, 1.2); if (m != null) centerMidi += (m - centerMidi) * 0.08; }
     const last = track[track.length - 1];
     showReadout(last);
+    showLevel(last ? last.rms : null);
   } else if (mode === 'play') {
     cursorT = audio.currentTime;
     viewEnd = cursorT + w / pxPerSec * 0.4;
     if (autoY) { const m = medianAround(cursorT, 1.0); if (m != null) centerMidi += (m - centerMidi) * 0.08; }
   }
   const cur = draw();
-  if (mode !== 'rec') showReadout(cursorT != null ? cur : null);
+  if (mode !== 'rec') { showReadout(cursorT != null ? cur : null); showLevel(cur ? cur.rms : null); }
   requestAnimationFrame(frame);
 }
 
 // ---- 操作 ----
-recBtn.addEventListener('click', () => { if (mode === 'rec') stopRec(); else startRec(); });
-playBtn.addEventListener('click', togglePlay);
-autoYBtn.addEventListener('click', () => setAutoY(!autoY));
-fitBtn.addEventListener('click', () => {
+function fitAll() {
   if (!duration) return;
   const w = cv.clientWidth;
   pxPerSec = Math.max(8, Math.min(1500, w / (duration + 0.4)));
   viewEnd = duration + 0.2;
-  const ms = track.filter(p => p.m != null).map(p => p.m);
+  const ms = track.filter(ok).map(p => p.m);
   if (ms.length) {
     ms.sort((a, b) => a - b);
     const lo = ms[Math.floor(ms.length * 0.02)], hi = ms[Math.floor(ms.length * 0.98)];
@@ -479,7 +807,13 @@ fitBtn.addEventListener('click', () => {
     pxPerSemi = Math.max(6, Math.min(60, cv.clientHeight / (hi - lo + 4)));
     setAutoY(false);
   }
-});
+}
+recBtn.addEventListener('click', () => { if (mode === 'rec') stopRec(); else { closeLib(); startRec(); } });
+playBtn.addEventListener('click', togglePlay);
+autoYBtn.addEventListener('click', () => setAutoY(!autoY));
+fitBtn.addEventListener('click', fitAll);
+libBtn.addEventListener('click', openLib);
+libClose.addEventListener('click', closeLib);
 
 const ptrs = new Map();
 let pinch = null, tapStart = null;
@@ -535,6 +869,16 @@ function endPtr(e) {
 cv.addEventListener('pointerup', endPtr);
 cv.addEventListener('pointercancel', endPtr);
 document.addEventListener('gesturestart', e => e.preventDefault());
+
+// 前回開いていた録音を表示して始める
+(async () => {
+  const last = store.get('lastId', null);
+  try {
+    if (last && await DB.getMeta(last)) { await loadTake(last); return; }
+    const items = await DB.list();
+    if (items.length) await loadTake(items[0].id);
+  } catch (e) {}
+})();
 
 requestAnimationFrame(frame);
 window.__pitchTrack = () => track;   // 動作確認用

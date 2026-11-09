@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="音程トレース">
+<meta name="theme-color" content="#f2f3f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101217" media="(prefers-color-scheme: dark)">
+<title>音程トレース</title>
+<style>
+/* 上に今の音の読み取り、真ん中に大きなピアノロール、下に親指で押せる操作ボタン */
+:root{
+  --bg:#f2f3f6; --roll:#ffffff; --fg:#15171c; --muted:#6a7080;
+  --grid:#e6e8ee; --key-black:#f1f2f6; --c-line:#c2c7d2;
+  --accent:#1f66e5; --accent-soft:rgba(31,102,229,.14); --rec:#d93228;
+  --good:#1c9a5a; --warn:#c98a10;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#101217; --roll:#171a21; --fg:#eef0f4; --muted:#8b92a3;
+  --grid:#232733; --key-black:#1c1f28; --c-line:#3b4152;
+  --accent:#5b95ff; --accent-soft:rgba(91,149,255,.18); --rec:#ff5a4f;
+  --good:#3fcf86; --warn:#e8b44a; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#101217; --roll:#171a21; --fg:#eef0f4; --muted:#8b92a3;
+  --grid:#232733; --key-black:#1c1f28; --c-line:#3b4152;
+  --accent:#5b95ff; --accent-soft:rgba(91,149,255,.18); --rec:#ff5a4f;
+  --good:#3fcf86; --warn:#e8b44a; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg); color:var(--fg); font-family:var(--font-ui);
+  display:flex; flex-direction:column; overflow:hidden;
+  -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+}
+header{
+  padding-top:max(10px, env(safe-area-inset-top, 0px));
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom:10px;
+  display:flex; align-items:center; gap:16px;
+}
+.note{font-family:var(--font-num); font-size:2.6rem; font-weight:700; line-height:1; min-width:4.2ch; font-variant-numeric:tabular-nums}
+.meta{display:flex; flex-direction:column; gap:6px; flex:1; min-width:0}
+.nums{display:flex; gap:14px; font-family:var(--font-num); font-variant-numeric:tabular-nums; font-size:.95rem}
+.nums .cents{font-weight:700}
+.nums .hz{color:var(--muted)}
+.meter{position:relative; height:10px; border-radius:5px; background:var(--grid); overflow:hidden}
+.meter::before{content:""; position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--c-line)}
+.meter .zone{position:absolute; left:40%; width:20%; top:0; bottom:0; background:var(--accent-soft)}
+.meter .mark{position:absolute; top:0; bottom:0; width:4px; margin-left:-2px; border-radius:2px; background:var(--accent); left:50%; opacity:0; transition:opacity .2s}
+.meter .mark.on{opacity:1}
+.status{font-size:.75rem; color:var(--muted); letter-spacing:.02em; white-space:nowrap}
+.status.rec{color:var(--rec); font-weight:700}
+
+#wrap{flex:1; position:relative; min-height:0; background:var(--roll); border-block:1px solid var(--grid)}
+canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none; display:block}
+.hint{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center;
+  padding:24px; color:var(--muted); font-size:.95rem; line-height:1.7; pointer-events:none;
+}
+
+footer{
+  padding-top:12px;
+  padding-bottom:max(14px, env(safe-area-inset-bottom, 0px));
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:12px;
+}
+.side{display:flex; gap:8px}
+.side.right{justify-content:flex-end}
+button{
+  font:inherit; color:var(--fg); background:var(--roll); border:1px solid var(--grid);
+  border-radius:10px; padding:10px 12px; font-size:.85rem; min-height:44px; cursor:pointer; white-space:nowrap;
+}
+button:disabled{opacity:.35}
+button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+button.on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent)}
+#recBtn{
+  width:72px; height:72px; border-radius:50%; padding:0; border:4px solid var(--fg);
+  background:transparent; display:grid; place-items:center;
+}
+#recBtn i{display:block; width:52px; height:52px; border-radius:50%; background:var(--rec); transition:all .18s}
+#recBtn.recording i{width:28px; height:28px; border-radius:6px}
+#playBtn{min-width:64px}
+.err{color:var(--rec)}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<header>
+  <div class="note" id="noteEl">--</div>
+  <div class="meta">
+    <div class="nums"><span class="cents" id="centsEl">±0¢</span><span class="hz" id="hzEl">— Hz</span><span class="status" id="statusEl">待機中</span></div>
+    <div class="meter" aria-hidden="true"><div class="zone"></div><div class="mark" id="markEl"></div></div>
+  </div>
+</header>
+
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div class="hint" id="hint">下の赤いボタンで録音を始めます。<br>歌った音程がここに線で流れます。<br>録音後は、なぞって移動・2本指で拡大・タップで再生位置。</div>
+</div>
+
+<footer>
+  <div class="side">
+    <button id="fitBtn" disabled>全体</button>
+    <button id="autoYBtn" class="on">縦を自動</button>
+  </div>
+  <button id="recBtn" aria-label="録音"><i></i></button>
+  <div class="side right">
+    <button id="playBtn" disabled>再生</button>
+  </div>
+</footer>
+
+<script>
+(() => {
+'use strict';
+const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const JP   = ['ド','ド#','レ','レ#','ミ','ファ','ファ#','ソ','ソ#','ラ','ラ#','シ'];
+const BLACK = new Set([1,3,6,8,10]);
+const hzToMidi = hz => 69 + 12 * Math.log2(hz / 440);
+const pc = n => ((n % 12) + 12) % 12;
+const noteName = n => NOTE[pc(n)] + (Math.floor(n / 12) - 1);
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), g = cv.getContext('2d');
+const noteEl = $('noteEl'), centsEl = $('centsEl'), hzEl = $('hzEl'), statusEl = $('statusEl'), markEl = $('markEl');
+const recBtn = $('recBtn'), playBtn = $('playBtn'), fitBtn = $('fitBtn'), autoYBtn = $('autoYBtn'), hint = $('hint');
+const audio = new Audio(); audio.preload = 'auto'; audio.playsInline = true;
+
+// ---- 状態 ----
+let mode = 'idle';                 // idle | rec | play
+let track = [];                    // {t, m(半音・小数), hz, rms}
+let duration = 0;
+let pxPerSec = 160, pxPerSemi = 22;
+let viewEnd = 4;                   // 右端の時刻（秒）
+let centerMidi = 60;               // 画面中央の音（C4）
+let autoY = true;
+let cursorT = null;                // 再生位置（停止中のタップでも置ける）
+let stream = null, actx = null, analyser = null, buf = null, recorder = null, chunks = [], t0 = 0, wakeLock = null;
+let audioUrl = null, sampleTimer = 0;
+
+// ---- 音程検出（YIN） ----
+let dBuf = null;
+function detect(buf, sr) {
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  const rms = Math.sqrt(s / buf.length);
+  if (rms < 0.006) return { hz: null, rms };
+  const minTau = Math.floor(sr / 1100);
+  const maxTau = Math.min(Math.floor(sr / 65), buf.length >> 1);
+  const W = buf.length - maxTau;
+  if (!dBuf || dBuf.length < maxTau + 1) dBuf = new Float32Array(maxTau + 1);
+  const d = dBuf;
+  d[0] = 1;
+  let run = 0;
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let sum = 0;
+    for (let i = 0; i < W; i++) { const x = buf[i] - buf[i + tau]; sum += x * x; }
+    run += sum;
+    d[tau] = run > 0 ? sum * tau / run : 1;
+  }
+  let tau = -1;
+  for (let t = minTau; t <= maxTau; t++) {
+    if (d[t] < 0.15) { while (t + 1 <= maxTau && d[t + 1] < d[t]) t++; tau = t; break; }
+  }
+  if (tau < 0) {
+    let best = minTau;
+    for (let t = minTau; t <= maxTau; t++) if (d[t] < d[best]) best = t;
+    if (d[best] > 0.3) return { hz: null, rms };
+    tau = best;
+  }
+  let shift = 0;
+  if (tau > 1 && tau < maxTau) {
+    const a = d[tau - 1], b = d[tau], c = d[tau + 1], den = a - 2 * b + c;
+    if (den !== 0) shift = 0.5 * (a - c) / den;
+  }
+  return { hz: sr / (tau + shift), rms };
+}
+
+// ---- 録音 ----
+function pickMime() {
+  if (!window.MediaRecorder) return '';
+  for (const m of ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']) {
+    try { if (MediaRecorder.isTypeSupported(m)) return m; } catch (e) {}
+  }
+  return '';
+}
+
+async function startRec() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('マイクが使えません（https で開いてください）', true); return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (e) {
+    setStatus('マイクの許可が必要です', true); return;
+  }
+  audio.pause();
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  try { await actx.resume(); } catch (e) {}
+  const src = actx.createMediaStreamSource(stream);
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 2048;
+  src.connect(analyser);
+  buf = new Float32Array(analyser.fftSize);
+
+  chunks = [];
+  const mime = pickMime();
+  try { recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
+  catch (e) { recorder = null; }
+  if (recorder) {
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: recorder.mimeType || mime || 'audio/mp4' });
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = URL.createObjectURL(blob);
+      audio.src = audioUrl;
+      audio.load();
+      playBtn.disabled = false;
+    };
+  }
+
+  track = []; duration = 0; cursorT = null;
+  playBtn.disabled = true; fitBtn.disabled = true;
+  mode = 'rec';
+  if (recorder) recorder.start();
+  t0 = performance.now();
+  sampleTimer = setInterval(sample, 12);
+  recBtn.classList.add('recording'); recBtn.setAttribute('aria-label', '録音停止');
+  hint.hidden = true;
+  setAutoY(true);
+  try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+
+function stopRec() {
+  clearInterval(sampleTimer);
+  mode = 'idle';
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (actx) actx.close().catch(() => {});
+  stream = null; actx = null; analyser = null;
+  recBtn.classList.remove('recording'); recBtn.setAttribute('aria-label', '録音');
+  duration = track.length ? track[track.length - 1].t : 0;
+  fitBtn.disabled = !track.length;
+  cursorT = 0;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  setStatus('録音済み ' + duration.toFixed(1) + '秒');
+}
+
+function sample() {
+  if (mode !== 'rec' || !analyser) return;
+  analyser.getFloatTimeDomainData(buf);
+  const sr = actx.sampleRate;
+  const t = (performance.now() - t0) / 1000 - (buf.length / sr) / 2;
+  if (t < 0) return;
+  const r = detect(buf, sr);
+  const m = r.hz ? hzToMidi(r.hz) : null;
+  track.push({ t, m, hz: r.hz, rms: r.rms });
+}
+
+// ---- 再生 ----
+function togglePlay() {
+  if (mode === 'play') { audio.pause(); return; }
+  if (!audio.src) return;
+  if (cursorT != null && duration && cursorT < duration - 0.05) audio.currentTime = cursorT;
+  else audio.currentTime = 0;
+  audio.play().then(() => {
+    mode = 'play'; playBtn.textContent = '停止'; setAutoY(true);
+  }).catch(() => setStatus('再生できませんでした', true));
+}
+audio.addEventListener('pause', () => {
+  if (mode === 'play') { mode = 'idle'; playBtn.textContent = '再生'; cursorT = audio.currentTime; }
+});
+audio.addEventListener('ended', () => { mode = 'idle'; playBtn.textContent = '再生'; cursorT = 0; });
+
+// ---- 表示 ----
+function setStatus(s, isErr) { statusEl.textContent = s; statusEl.className = 'status' + (isErr ? ' err' : ''); }
+function setAutoY(v) { autoY = v; autoYBtn.classList.toggle('on', v); }
+
+function pointAt(t) {
+  let lo = 0, hi = track.length - 1;
+  if (hi < 0) return null;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (track[mid].t < t) lo = mid + 1; else hi = mid; }
+  const p = track[lo];
+  return Math.abs(p.t - t) < 0.05 ? p : null;
+}
+
+function showReadout(p) {
+  if (!p || p.m == null) {
+    noteEl.textContent = '--'; centsEl.textContent = '±0¢'; hzEl.textContent = '— Hz';
+    markEl.classList.remove('on'); centsEl.style.color = ''; return;
+  }
+  const n = Math.round(p.m), c = Math.round((p.m - n) * 100);
+  noteEl.textContent = noteName(n);
+  centsEl.textContent = (c > 0 ? '+' : c < 0 ? '−' : '±') + Math.abs(c) + '¢ ' + JP[pc(n)];
+  centsEl.style.color = Math.abs(c) <= 10 ? 'var(--good)' : Math.abs(c) <= 25 ? '' : 'var(--warn)';
+  hzEl.textContent = p.hz.toFixed(1) + ' Hz';
+  markEl.style.left = (50 + c) + '%';
+  markEl.classList.add('on');
+}
+
+function recentMedian(tEnd, span) {
+  const vals = [];
+  for (let i = track.length - 1; i >= 0; i--) {
+    const p = track[i];
+    if (p.t < tEnd - span) break;
+    if (p.m != null) vals.push(p.m);
+  }
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  return vals[vals.length >> 1];
+}
+function medianAround(t, span) {
+  const vals = [];
+  for (const p of track) { if (p.t >= t - span && p.t <= t + span && p.m != null) vals.push(p.m); }
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  return vals[vals.length >> 1];
+}
+
+let css = {};
+function readTokens() {
+  const s = getComputedStyle(document.documentElement);
+  for (const k of ['roll', 'fg', 'muted', 'grid', 'key-black', 'c-line', 'accent', 'accent-soft', 'rec'])
+    css[k] = s.getPropertyValue('--' + k).trim();
+}
+readTokens();
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', readTokens);
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w, h };
+}
+
+function draw() {
+  const { w, h } = resize();
+  const tL = viewEnd - w / pxPerSec;
+  const X = t => (t - tL) * pxPerSec;
+  const Y = m => h / 2 - (m - centerMidi) * pxPerSemi;
+  g.fillStyle = css.roll; g.fillRect(0, 0, w, h);
+
+  // 鍵盤の段
+  const mTop = centerMidi + h / 2 / pxPerSemi + 1, mBot = centerMidi - h / 2 / pxPerSemi - 1;
+  for (let n = Math.floor(mBot); n <= Math.ceil(mTop); n++) {
+    const y = Y(n);
+    if (BLACK.has(pc(n))) { g.fillStyle = css['key-black']; g.fillRect(0, y - pxPerSemi / 2, w, pxPerSemi); }
+  }
+  for (let n = Math.floor(mBot); n <= Math.ceil(mTop); n++) {
+    const y = Math.round(Y(n)) + 0.5;
+    const isC = pc(n) === 0;
+    g.strokeStyle = isC ? css['c-line'] : css.grid; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+  }
+  // 時間の目盛り
+  const step = pxPerSec >= 120 ? 1 : pxPerSec >= 50 ? 2 : 5;
+  g.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  g.textBaseline = 'bottom'; g.textAlign = 'left';
+  for (let s = Math.max(0, Math.ceil(tL / step) * step); s <= viewEnd; s += step) {
+    const x = Math.round(X(s)) + 0.5;
+    g.strokeStyle = css.grid; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+    g.fillStyle = css.muted; g.fillText(s + 's', x + 3, h - 4);
+  }
+
+  // 音程の線
+  g.strokeStyle = css.accent; g.lineWidth = 2.2; g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath();
+  let prev = null;
+  for (let i = 0; i < track.length; i++) {
+    const p = track[i];
+    if (p.t < tL - 0.2) continue;
+    if (p.t > viewEnd + 0.2) break;
+    if (p.m == null) { prev = null; continue; }
+    const x = X(p.t), y = Y(p.m);
+    if (prev && p.t - prev.t < 0.08 && Math.abs(p.m - prev.m) < 2.5) g.lineTo(x, y);
+    else { g.moveTo(x, y); }
+    prev = p;
+  }
+  g.stroke();
+
+  // 再生位置
+  let cur = null;
+  if (mode === 'rec') {
+    const last = track[track.length - 1];
+    if (last && last.m != null) {
+      g.fillStyle = css.rec; g.beginPath(); g.arc(X(last.t), Y(last.m), 5, 0, Math.PI * 2); g.fill();
+    }
+  } else if (cursorT != null && track.length) {
+    const x = Math.round(X(cursorT)) + 0.5;
+    g.strokeStyle = css.fg; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+    cur = pointAt(cursorT);
+    if (cur && cur.m != null) { g.fillStyle = css.fg; g.beginPath(); g.arc(x, Y(cur.m), 4.5, 0, Math.PI * 2); g.fill(); }
+  }
+
+  // 音名ラベル（左端）
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.font = '600 11px ' + getComputedStyle(document.body).fontFamily;
+  for (let n = Math.floor(mBot); n <= Math.ceil(mTop); n++) {
+    const isC = pc(n) === 0;
+    if (BLACK.has(pc(n))) continue;
+    if (!isC && pxPerSemi < 13) continue;
+    const y = Y(n), label = noteName(n);
+    const tw = g.measureText(label).width;
+    g.fillStyle = css.roll; g.globalAlpha = 0.85; g.fillRect(2, y - 7, tw + 8, 14); g.globalAlpha = 1;
+    g.fillStyle = isC ? css.fg : css.muted; g.fillText(label, 6, y);
+  }
+  return cur;
+}
+
+function frame() {
+  const { w } = { w: cv.clientWidth };
+  if (mode === 'rec') {
+    const now = (performance.now() - t0) / 1000;
+    viewEnd = Math.max(w / pxPerSec, now + 0.4);
+    if (autoY) { const m = recentMedian(now, 1.2); if (m != null) centerMidi += (m - centerMidi) * 0.08; }
+    const last = track[track.length - 1];
+    showReadout(last);
+  } else if (mode === 'play') {
+    cursorT = audio.currentTime;
+    viewEnd = cursorT + w / pxPerSec * 0.4;
+    if (autoY) { const m = medianAround(cursorT, 1.0); if (m != null) centerMidi += (m - centerMidi) * 0.08; }
+  }
+  const cur = draw();
+  if (mode !== 'rec') showReadout(cursorT != null ? cur : null);
+  requestAnimationFrame(frame);
+}
+
+// ---- 操作 ----
+recBtn.addEventListener('click', () => { if (mode === 'rec') stopRec(); else startRec(); });
+playBtn.addEventListener('click', togglePlay);
+autoYBtn.addEventListener('click', () => setAutoY(!autoY));
+fitBtn.addEventListener('click', () => {
+  if (!duration) return;
+  const w = cv.clientWidth;
+  pxPerSec = Math.max(8, Math.min(1500, w / (duration + 0.4)));
+  viewEnd = duration + 0.2;
+  const ms = track.filter(p => p.m != null).map(p => p.m);
+  if (ms.length) {
+    ms.sort((a, b) => a - b);
+    const lo = ms[Math.floor(ms.length * 0.02)], hi = ms[Math.floor(ms.length * 0.98)];
+    centerMidi = (lo + hi) / 2;
+    pxPerSemi = Math.max(6, Math.min(60, cv.clientHeight / (hi - lo + 4)));
+    setAutoY(false);
+  }
+});
+
+const ptrs = new Map();
+let pinch = null, tapStart = null;
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) tapStart = { x: e.clientX, y: e.clientY, moved: false };
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    pinch = { dx: Math.max(40, Math.abs(a.x - b.x)), dy: Math.max(40, Math.abs(a.y - b.y)), ps: pxPerSec, pm: pxPerSemi,
+              cx: (a.x + b.x) / 2 };
+    tapStart = null;
+  }
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const old = ptrs.get(e.pointerId);
+  const now = { x: e.clientX, y: e.clientY };
+  ptrs.set(e.pointerId, now);
+  if (ptrs.size === 2 && pinch) {
+    const [a, b] = [...ptrs.values()];
+    const rect = cv.getBoundingClientRect();
+    const cx = pinch.cx - rect.left;
+    const tAtCx = viewEnd - (cv.clientWidth - cx) / pxPerSec;
+    const nx = Math.max(40, Math.abs(a.x - b.x)), ny = Math.max(40, Math.abs(a.y - b.y));
+    if (mode !== 'rec') {
+      pxPerSec = Math.max(8, Math.min(1500, pinch.ps * nx / pinch.dx));
+      viewEnd = tAtCx + (cv.clientWidth - cx) / pxPerSec;
+    }
+    pxPerSemi = Math.max(6, Math.min(80, pinch.pm * ny / pinch.dy));
+    return;
+  }
+  if (ptrs.size === 1) {
+    const dx = now.x - old.x, dy = now.y - old.y;
+    if (tapStart && Math.hypot(now.x - tapStart.x, now.y - tapStart.y) > 8) tapStart.moved = true;
+    if (tapStart && !tapStart.moved) return;
+    if (mode === 'idle') viewEnd -= dx / pxPerSec;
+    if (Math.abs(dy) > 0) { centerMidi += dy / pxPerSemi; setAutoY(false); }
+  }
+});
+function endPtr(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  if (ptrs.size === 0 && tapStart && !tapStart.moved && track.length && mode !== 'rec') {
+    const rect = cv.getBoundingClientRect();
+    const t = viewEnd - (rect.right - e.clientX) / pxPerSec;
+    cursorT = Math.max(0, Math.min(duration, t));
+    if (mode === 'play') audio.currentTime = cursorT;
+  }
+  if (ptrs.size === 0) tapStart = null;
+}
+cv.addEventListener('pointerup', endPtr);
+cv.addEventListener('pointercancel', endPtr);
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

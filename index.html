@@ -198,42 +198,54 @@ async function startRec() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     setStatus('マイクが使えません（https で開いてください）', true); return;
   }
+  audio.pause();
+  // iOS: AudioContext はタップの瞬間に作って起こしておく（await の後だと止まったままになる）
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  actx.resume().catch(() => {});
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
   } catch (e) {
-    setStatus('マイクの許可が必要です', true); return;
+    actx.close().catch(() => {}); actx = null;
+    setStatus('マイクの許可が必要です（' + e.name + '）', true); return;
   }
-  audio.pause();
-  actx = new (window.AudioContext || window.webkitAudioContext)();
-  try { await actx.resume(); } catch (e) {}
+  if (actx.state !== 'running') { try { await actx.resume(); } catch (e) {} }
   const src = actx.createMediaStreamSource(stream);
   analyser = actx.createAnalyser();
   analyser.fftSize = 2048;
   src.connect(analyser);
+  // Safari は出力につながっていないノードを動かさないことがあるので、無音で出力へつなぐ
+  const mute = actx.createGain(); mute.gain.value = 0;
+  analyser.connect(mute); mute.connect(actx.destination);
   buf = new Float32Array(analyser.fftSize);
 
   chunks = [];
   const mime = pickMime();
   try { recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
-  catch (e) { recorder = null; }
+  catch (e) { recorder = null; setStatus('録音機能が使えません（' + e.name + '）', true); }
   if (recorder) {
-    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: recorder.mimeType || mime || 'audio/mp4' });
+    const rec = recorder, recStream = stream;
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      // マイクは録音データを書き終えてから止める（先に止めると中身が空になる）
+      recStream.getTracks().forEach(t => t.stop());
+      const type = rec.mimeType || mime || 'audio/mp4';
+      const blob = new Blob(chunks, { type });
+      if (!blob.size) { setStatus('録音データが空でした', true); return; }
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       audioUrl = URL.createObjectURL(blob);
       audio.src = audioUrl;
       audio.load();
       playBtn.disabled = false;
+      setStatus('録音済み ' + duration.toFixed(1) + '秒');
     };
   }
 
-  track = []; duration = 0; cursorT = null;
+  track = []; duration = 0; cursorT = null; lastLevelAt = 0;
   playBtn.disabled = true; fitBtn.disabled = true;
   mode = 'rec';
-  if (recorder) recorder.start();
+  if (recorder) recorder.start(1000);
   t0 = performance.now();
   sampleTimer = setInterval(sample, 12);
   recBtn.classList.add('recording'); recBtn.setAttribute('aria-label', '録音停止');
@@ -246,7 +258,7 @@ function stopRec() {
   clearInterval(sampleTimer);
   mode = 'idle';
   if (recorder && recorder.state !== 'inactive') recorder.stop();
-  if (stream) stream.getTracks().forEach(t => t.stop());
+  else if (stream) stream.getTracks().forEach(t => t.stop());
   if (actx) actx.close().catch(() => {});
   stream = null; actx = null; analyser = null;
   recBtn.classList.remove('recording'); recBtn.setAttribute('aria-label', '録音');
@@ -254,9 +266,10 @@ function stopRec() {
   fitBtn.disabled = !track.length;
   cursorT = 0;
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
-  setStatus('録音済み ' + duration.toFixed(1) + '秒');
+  setStatus('保存中…');
 }
 
+let lastLevelAt = 0;
 function sample() {
   if (mode !== 'rec' || !analyser) return;
   analyser.getFloatTimeDomainData(buf);
@@ -266,22 +279,32 @@ function sample() {
   const r = detect(buf, sr);
   const m = r.hz ? hzToMidi(r.hz) : null;
   track.push({ t, m, hz: r.hz, rms: r.rms });
+  if (t - lastLevelAt > 0.25) {
+    lastLevelAt = t;
+    const db = r.rms > 0 ? Math.round(20 * Math.log10(r.rms)) : -99;
+    setStatus('録音中 入力 ' + db + 'dB' + (actx.state !== 'running' ? '（' + actx.state + '）' : ''));
+    statusEl.classList.add('rec');
+  }
 }
 
 // ---- 再生 ----
 function togglePlay() {
   if (mode === 'play') { audio.pause(); return; }
   if (!audio.src) return;
-  if (cursorT != null && duration && cursorT < duration - 0.05) audio.currentTime = cursorT;
-  else audio.currentTime = 0;
+  const start = (cursorT != null && duration && cursorT < duration - 0.05) ? cursorT : 0;
   audio.play().then(() => {
+    try { audio.currentTime = start; } catch (e) {}
     mode = 'play'; playBtn.textContent = '停止'; setAutoY(true);
-  }).catch(() => setStatus('再生できませんでした', true));
+  }).catch(e => setStatus('再生できませんでした（' + e.name + '）', true));
 }
 audio.addEventListener('pause', () => {
   if (mode === 'play') { mode = 'idle'; playBtn.textContent = '再生'; cursorT = audio.currentTime; }
 });
 audio.addEventListener('ended', () => { mode = 'idle'; playBtn.textContent = '再生'; cursorT = 0; });
+audio.addEventListener('error', () => {
+  const c = audio.error ? audio.error.code : '?';
+  setStatus('音声を読めません（コード' + c + '）', true);
+});
 
 // ---- 表示 ----
 function setStatus(s, isErr) { statusEl.textContent = s; statusEl.className = 'status' + (isErr ? ' err' : ''); }
